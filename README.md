@@ -1,112 +1,100 @@
-# Library microservices
+# Creating Your Own Starter
 
-## Задание 
-1. Восстановить пример, рассмотренный на уроке (запустить эврику и 2 сервиса; заставить их взаимодействовать)
-Сдать скриншот страницы /eureka/apps с зарегистрированными приложениями.
-На скрине должно быть видно оба сервиса (book-service, issuer-service)
-2. Добавить третий сервис: сервис читателей.
-Обогатить ручку GET /issue, чтобы она возвращала подробную информацию:
-```json
-[
-  {
-    "id": "733a8a9f-7fbf-4eb6-9900-f3338007d848",
-    "issuedAt": "2024-11-28",
-    "book": {
-      "id": "78a0d4d5-67db-45f8-b846-da410f01aa11",
-      "name": "Absalom, Absalom!",
-      "author": {
-        "id": "4deeeb5b-f263-4c5f-9c8c-62b83b0977ee",
-        "firstName": "Justen",
-        "lastName": "Huels"
-      }
-    },
-    "reader": {
-      "id": "78a0d4d5-67db-45f8-b846-da410f01bc34",
-      "firstName": "Имя читателя",
-      "lastName": "Фамилия читателя"
-    }
-  }
-]
-```
+## Задача
+
+Проблематика: имеется несколько микросервисов (проектов) на spring-boot: reader-service, book-service, issue-service, ...
+Хочется, чтобы в каждом из этих проектов работал аспект-таймер, замеряющий время выполнения метода бина, помеченного аннотацией @Timer (см. дз к уроку 8)
+
+Решение: создать стартер, который будет инкапсулировать в себе аспект и его автоматический импорт в подключающий проект.
+То есть:
+1. Пишем стартер, в котором задекларирован аспект и его работа
+2. Подключаем стартер в reader-service, book-service, issue-service, ...
+
+Шаги реализации:
+1. Создаем новый модуль в микросервисном проекте - это и будет наш стартер
+2. Берем код с ДЗ-8 (класс аспекта и аннотации) и переносим в стартер
+3. В стартере декларируем Configuration и внутри нее декларируем бин - аспект
+4. В проекте стартера в resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports прописываем полный путь конфигурации
+5. Подключаем зависимость стартера (pom-dependency) в микросервисы
+6. Проверяем, что аспект работает
+
+Доп. задание (со звездочкой): придумать точки расширения\конфигурирования аспекта:
+Включить\выключить по флажку в конфиге (ConditionalOnProperty)
+
 ## Решение
-### Добавлены сервисы
-* book-service
-* reader-service
-* issue-service
 
-Дополнительно добавлен gateway-server (Spring Cloud Gateway) для удобства составления запросов. 
-Запросы к сервисам осуществляются через единую точку `http://localhost:8765`
-### Добавлен Discovery server (Netflix Eureka)
-Сервисы выступают клиентами Discovery server:
+### Создаем новый модуль
 
-`application.yml` на примере book-service
-```yaml
-server:
-  port: 0
+Создаем новый модуль `time-meter-spring-boot-starter` с зависимостями:
 
-spring:
-  application:
-    name: book-service
-  datasource:
-    url: jdbc:h2:mem:library_db
-    username: user
-    password: SecretPassword
-    driver-class-name: org.h2.Driver
+`pom.xml`
+```xml
+...
 
-eureka:
-  client:
-    service-url:
-      defaultZone: ${EUREKA_SERVER:http://localhost:8761/eureka}
-  instance:
-    instance-id: ${spring.application.name}:${random.uuid}
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-autoconfigure-processor</artifactId>
+</dependency>
+
+...
 ```
-### Межсервисное взаимодействие
-Для `issue-service` определен конфиг с WebClient
 
-`IssueConfig.java`
+### Создаем @Configuration класс
+
+`TimeMeterConfiguration.java`
 ```java
-@Configuration
-public class IssueConfig {
+@AutoConfiguration
+public class TimeMeterConfiguration {
 
     @Bean
-    public ModelMapper modelMapper() {
-        return new ModelMapper();
-    }
-
-    @Bean
-    public WebClient webClient(ReactorLoadBalancerExchangeFilterFunction loadBalancerExchangeFilterFunction) {
-        return WebClient
-                .builder()
-                .filter(loadBalancerExchangeFilterFunction)
-                .build();
+    public TimerAspect timer() {
+        return new TimerAspect();
     }
 }
 ```
-Часть сервиса IssueService с запросами к Book и Reader
-`IssueService.java`
-```java
+
+### Locating Auto-configuration Candidates
+
+В папке resources создаем 
+`./META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
+
+Файл org.springframework.boot.autoconfigure.AutoConfiguration.imports должен содержать 
+список классов конфигурации:
+
+`org.springframework.boot.autoconfigure.AutoConfiguration.imports`:
+```
+ru.letsdigit.timemeterspringbootstarter.TimeMeterConfiguration
+```
+
+### Подключаем стартер
+
+book-service `pom.xml`:
+```xml
 ...
 
-public IssueResponse findById(UUID uuid) {
-        Optional<Issue> issue = repository.findById(uuid);
-        IssueResponse issueResponse = modelMapper.map(issue, IssueResponse.class);
-        BookResponse bookResponse = webClient
-                .get()
-                .uri("http://book-service/api/v1/book?uuid=" + issue.get().getBookUuid())
-                .retrieve()
-                .bodyToMono(BookResponse.class).block();
-        issueResponse.setBookResponse(bookResponse);
-        ReaderResponse readerResponse = webClient
-                .get()
-                .uri("http://reader-service/api/v1/reader?uuid=" + issue.get().getReaderUuid())
-                .retrieve()
-                .bodyToMono(ReaderResponse.class)
-                .block();
-        issueResponse.setReaderResponse(readerResponse);
-        return issueResponse;
-    }
+<dependency>
+    <groupId>ru.letsdigit</groupId>
+    <artifactId>time-meter-spring-boot-starter</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+</dependency>
+
 ...
 ```
 
+Отмечаем метод контроллера аннотацией `@Timer`:
+```java
+@Timer
+@GetMapping(value = "/all")
+public ResponseEntity<Iterable<Book>> findAll() {
+    return new ResponseEntity<>(service.findAll(), HttpStatus.OK);
+}
+```
 
+При запросе на http://localhost:8765/book-service/api/v1/book/all в 
+логах отображается работа TimerAspect:
 
+![time logg](./img/book_req.png)
