@@ -98,3 +98,48 @@ public ResponseEntity<Iterable<Book>> findAll() {
 логах отображается работа TimerAspect:
 
 ![time logg](./img/book_req.png)
+
+## Дополнительная функциональность
+
+Для реализации возможности включения/выключения логирования из `application` файла
+сервиса создаем property-класс с описанием параметров.
+`TimeMeterProperties.java`
+```java
+@Data
+@ConfigurationProperties("executiontimer")
+public class TimeMeterProperties {
+    /**
+     * Включение/отключение логирования
+     */
+    private boolean loggingOn = false;
+}
+```
+Редактируем класс конфигурации
+`TimeMeterConfiguration.java`
+```java
+@AutoConfiguration
+@EnableConfigurationProperties(TimeMeterProperties.class)
+@ConditionalOnProperty(value = "executiontimer.logging-on", havingValue = "true")
+public class TimeMeterConfiguration {
+
+    @Bean
+    public TimerAspect timer() {
+        return new TimerAspect();
+    }
+}
+```
+где 
+```java
+@ConditionalOnProperty(value = "executiontimer.logging-on", havingValue = "true")
+```
+условие при котором будет выполняться логирование.
+
+### Автодополнение
+
+![auto](./img/et_properties.png)
+
+### Логирование включено
+![enable](./img/prop_enable.png)
+
+### Логирование отключено
+![disable](./img/prop_disable.png)
