@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.letsdigit.bookservice.entity.Book;
 import ru.letsdigit.bookservice.service.BookService;
+import ru.letsdigit.timemeterspringbootstarter.aspect.Timer;
 
 import java.util.UUID;
 
@@ -30,6 +31,7 @@ public class BookController {
                 .orElseGet(() -> new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
 
+    @Timer
     @GetMapping(value = "/all")
     public ResponseEntity<Iterable<Book>> findAll() {
         return new ResponseEntity<>(service.findAll(), HttpStatus.OK);
